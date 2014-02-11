@@ -1,0 +1,157 @@
+`r opts_chunk$set(cache=TRUE, fig.width=12)`
+<link href="http://joey711.github.com/phyloseq/markdown.css" rel="stylesheet"></link>
+
+
+# DESeq2 with phyloseq
+
+DESeq2 has an official extension within the phyloseq package and an accompanying vignette. The vignette has been copied/included here for continuity, and as you can see, `phyloseq_to_deseq2` does not need to be defined before using it because it is already available when you load phyloseq.
+
+# Citations
+
+If you find this extension or tutorial useful in your work, please cite the following:
+
+### Differential Abundance for Microbiome Data
+McMurdie and Holmes (2014) Waste Not, Want Not: Why Rarefying Microbiome Data is Inadmissible.
+PLoS Computational Biology *in press*
+
+### phyloseq
+McMurdie and Holmes (2013) phyloseq: An R Package for Reproducible Interactive Analysis and Graphics of Microbiome Census Data.
+[PLoS ONE. 8(4):e61217](http://dx.plos.org/10.1371/journal.pone.0061217)
+
+### DESeq2
+Anders S, Huber W (2010) Differential expression analysis for sequence count data.
+[Genome Biology 11: R106](http://www.biomedcentral.com/content/pdf/gb-2010-11-10-r106.pdf)
+
+
+
+## Background on the data
+
+In this example I use the publicly available data from a study on colorectal cancer:
+
+[Genomic analysis identifies association of Fusobacterium with colorectal carcinoma](http://genome.cshlp.org/content/22/2/292.long).
+Kostic, A. D., Gevers, D., Pedamallu, C. S., Michaud, M., Duke, F., Earl, A. M., et al. (2012). *Genome research*, 22(2), 292-298. 
+
+As a side-note, this work was published ahead of print in [Genome Research](http://genome.cshlp.org/) alongside a highly-related article from a separate group of researchers (long-live reproducible observations!): [Fusobacterium nucleatum infection is prevalent in human colorectal carcinoma](http://genome.cshlp.org/content/22/2/299.long). In case you are interested. For the purposes of example, however, we will stick to the data from the former study, with data available at the [microbio.me/qiime](http://www.microbio.me/qiime/) server.
+
+Study ID:  `1457`
+
+Project Name:  `Kostic_colorectal_cancer_fusobacterium`
+
+Study Abstract:	The tumor microenvironment of colorectal carcinoma is a complex community of genomically altered cancer cells, nonneoplastic cells, and a diverse collection of microorganisms. Each of these components may contribute to carcino genesis; however, the role of the microbiota is the least well understood. We have characterized the composition of the microbiota in colorectal carcinoma using whole genome sequences from nine tumor/normal pairs. Fusobacterium sequences were enriched in carcinomas, confirmed by quantitative PCR and 16S rDNA sequence analysis of 95 carcinoma/normal DNA pairs, while the Bacteroidetes and Firmicutes phyla were depleted in tumors. Fusobacteria were also visualized within colorectal tumors using FISH. These findings reveal alterations in the colorectal cancer microbiota; however, the precise role of Fusobacteria in colorectal carcinoma pathogenesis requires further investigation.
+
+## Import data with phyloseq, convert to DESeq2
+
+Start by loading phyloseq.
+
+```{r load-phyloseq, message=FALSE, warning=FALSE}
+library("phyloseq"); packageVersion("phyloseq")
+```
+
+Defined file path, and import the published OTU count data into R.
+
+```{r filepath}
+filepath = system.file("extdata", "study_1457_split_library_seqs_and_mapping.zip", package="phyloseq")
+kostic = microbio_me_qiime(filepath)
+```
+
+Here I had to use a relative file path so that this example works on all systems that have phyloseq installed. In practice, your file path will look like this (if you've downloaded the data ahead of time):
+
+```{r example-path-local, eval=FALSE}
+filepath = "~/Downloads/study_1457_split_library_seqs_and_mapping.zip"
+kostic = microbio_me_qiime(filepath)
+```
+
+Or like this (if you're accessing data directly from the microbio.me/qiime server directly):
+
+```{r example-path-remote, eval=FALSE}
+kostic = microbio_me_qiime(1457)
+```
+
+
+## Convert to DESeq2's DESeqDataSet class
+
+In this example I'm using the major sample covariate, `DIAGNOSIS`, as the study design factor. The focus of this study was to compare the microbiomes of pairs of healthy and cancerous tissues, so this makes sense. Your study could have a more complex or nested design, and you should think carefully about the study design formula, because this is critical to the test results and their meaning. You might even need to define a new factor if none of the variables in your current table appropriately represent your study's design. See [the DESeq2 home page](http://www.bioconductor.org/packages/release/bioc/html/DESeq2.html) for more details. 
+
+Here is the summary of the data variable `kostic` that we are about to use, as well as the first few entries of the `DIAGNOSIS` factor.
+```{r show-variables}
+kostic
+head(sample_data(kostic)$DIAGNOSIS, 25)
+```
+
+Unfortunately, the diagnosis variable has a third placeholder class indicating that no diagnosis was given (`"None"`). For the purposes of testing, these samples will be removed.
+
+```{r}
+kostic = subset_samples(kostic, DIAGNOSIS != "None")
+kostic
+```
+
+
+
+### DESeq2 conversion and call
+
+First load DESeq2.
+
+```{r deseq2, message=FALSE, warning=FALSE}
+library("DESeq2")
+packageVersion("DESeq2")
+```
+
+The following two lines actually do all the complicated DESeq2 work. The function `phyloseq_to_deseq2` converts your phyloseq-format microbiome data into a `DESeqDataSet` with dispersions estimated, using the experimental design formula, also shown (the `~DIAGNOSIS` term). The `DESeq` function does the rest of the testing, in this case with default testing framework, but you can actually use alternatives. 
+
+```{r run-deseq2}
+diagdds = phyloseq_to_deseq2(kostic, ~ DIAGNOSIS)
+diagdds = DESeq(diagdds, test="Wald", fitType="parametric")
+```
+Note: The default multiple-inference correction is Benjamini-Hochberg, and occurs within the `DESeq` function.
+
+### Investigate test results table
+
+The following `results` function call creates a table of the results of the tests. Very fast. The hard work was already stored with the rest of the DESeq2-related data in our latest version of the `diagdds` object (see above). I then order by the adjusted p-value, removing the entries with an `NA` value. The rest of this example is just formatting the results table with taxonomic information for nice(ish) display in the HTML output.
+
+```{r grab-results-process-table}
+res = results(diagdds)
+alpha = 0.01
+# The following omits the NA p-values. I'm not sure where the NA is derived from.
+sigtab = res[which(res$padj < alpha), ]
+# This line then reinstates the previous NA padj values if their
+# log2FoldChange was greater than for p-value threshold.
+# Note that this next line is a hack to deal with the unexplained/unexpected NA p-values,
+# and I will udpate this once I can track down the reasoning.
+sigtab = res[abs(res$log2FoldChange) > min(abs(sigtab$log2FoldChange)), ]
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(kostic)[rownames(sigtab), ], "matrix"))
+head(sigtab)
+dim(sigtab)
+```
+
+Let's look at the OTUs that were significantly different between the two tissues. The following makes a nice ggplot2 summary of the results.
+
+```{r bar-plot}
+library("ggplot2")
+theme_set(theme_bw())
+scale_fill_discrete <- function(palname = "Set1", ...) {
+    scale_fill_brewer(palette = palname, ...)
+}
+# Phylum order
+x = tapply(sigtab$log2FoldChange, sigtab$Phylum, function(x) max(x))
+x = sort(x, TRUE)
+sigtab$Phylum = factor(as.character(sigtab$Phylum), levels=names(x))
+# Genus order
+x = tapply(sigtab$log2FoldChange, sigtab$Genus, function(x) max(x))
+x = sort(x, TRUE)
+sigtab$Genus = factor(as.character(sigtab$Genus), levels=names(x))
+ggplot(sigtab, aes(x=Genus, y=log2FoldChange, color=Phylum)) + geom_point(size=6) + 
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))
+```
+
+
+
+---
+
+## Other extensions for the phyloseq package:
+
+```{r other-graphics-links, results='asis', echo=FALSE}
+htmlfiles = list.files(pattern="\\.html")
+htmlstems = gsub(".html", "", htmlfiles)
+mdlines = paste("#### [", htmlstems, "](", htmlfiles, ")", sep="")
+cat(mdlines, sep="\n\n")
+```
