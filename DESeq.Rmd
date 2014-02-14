@@ -1,0 +1,224 @@
+`r opts_chunk$set(cache=FALSE, fig.width=12)`
+<link href="http://joey711.github.com/phyloseq/markdown.css" rel="stylesheet"></link>
+
+
+# DESeq with phyloseq
+
+DESeq has been a popular analysis package for RNA-Seq data, but it does not have an official extension within the phyloseq package because of the latter's support for the more-recently developed DESeq2 (which shares the same scholarly citation, by the way).
+
+## Citations
+
+If you find this extension or tutorial useful in your work, please cite the following:
+
+### Differential Abundance for Microbiome Data
+McMurdie and Holmes (2014) Waste Not, Want Not: Why Rarefying Microbiome Data is Inadmissible.
+PLoS Computational Biology *in press*
+
+### phyloseq
+McMurdie and Holmes (2013) phyloseq: An R Package for Reproducible Interactive Analysis and Graphics of Microbiome Census Data.
+[PLoS ONE. 8(4):e61217](http://dx.plos.org/10.1371/journal.pone.0061217)
+
+### DESeq
+Anders S, Huber W (2010) Differential expression analysis for sequence count data.
+[Genome Biology 11: R106](http://www.biomedcentral.com/content/pdf/gb-2010-11-10-r106.pdf)
+
+
+
+## Background on the data
+
+In this example I use the publicly available data from a study on colorectal cancer:
+
+[Genomic analysis identifies association of Fusobacterium with colorectal carcinoma](http://genome.cshlp.org/content/22/2/292.long).
+Kostic, A. D., Gevers, D., Pedamallu, C. S., Michaud, M., Duke, F., Earl, A. M., et al. (2012). *Genome research*, 22(2), 292-298. 
+
+As a side-note, this work was published ahead of print in [Genome Research](http://genome.cshlp.org/) alongside a highly-related article from a separate group of researchers (long-live reproducible observations!): [Fusobacterium nucleatum infection is prevalent in human colorectal carcinoma](http://genome.cshlp.org/content/22/2/299.long). In case you are interested. For the purposes of example, however, we will stick to the data from the former study, with data available at the [microbio.me/qiime](http://www.microbio.me/qiime/) server.
+
+Study ID:  `1457`
+
+Project Name:  `Kostic_colorectal_cancer_fusobacterium`
+
+Study Abstract:	The tumor microenvironment of colorectal carcinoma is a complex community of genomically altered cancer cells, nonneoplastic cells, and a diverse collection of microorganisms. Each of these components may contribute to carcino genesis; however, the role of the microbiota is the least well understood. We have characterized the composition of the microbiota in colorectal carcinoma using whole genome sequences from nine tumor/normal pairs. Fusobacterium sequences were enriched in carcinomas, confirmed by quantitative PCR and 16S rDNA sequence analysis of 95 carcinoma/normal DNA pairs, while the Bacteroidetes and Firmicutes phyla were depleted in tumors. Fusobacteria were also visualized within colorectal tumors using FISH. These findings reveal alterations in the colorectal cancer microbiota; however, the precise role of Fusobacteria in colorectal carcinoma pathogenesis requires further investigation.
+
+## Import data with phyloseq, convert to DESeq2
+
+Start by loading phyloseq.
+
+```{r load-phyloseq, message=FALSE, warning=FALSE}
+library("phyloseq"); packageVersion("phyloseq")
+```
+
+Defined file path, and import the published OTU count data into R.
+
+```{r filepath}
+filepath = system.file("extdata", "study_1457_split_library_seqs_and_mapping.zip", package="phyloseq")
+kostic = microbio_me_qiime(filepath)
+```
+
+Here I had to use a relative file path so that this example works on all systems that have phyloseq installed. In practice, your file path will look like this (if you've downloaded the data ahead of time):
+
+```{r example-path-local, eval=FALSE}
+filepath = "~/Downloads/study_1457_split_library_seqs_and_mapping.zip"
+kostic = microbio_me_qiime(filepath)
+```
+
+Or like this (if you're accessing data directly from the microbio.me/qiime server directly):
+
+```{r example-path-remote, eval=FALSE}
+kostic = microbio_me_qiime(1457)
+```
+
+
+## Convert to DESeq2's DESeqDataSet class
+
+In this example I'm using the major sample covariate, `DIAGNOSIS`, as the study design factor. The focus of this study was to compare the microbiomes of pairs of healthy and cancerous tissues, so this makes sense. Your study could have a more complex or nested design, and you should think carefully about the study design formula, because this is critical to the test results and their meaning. You might even need to define a new factor if none of the variables in your current table appropriately represent your study's design. See [the DESeq2 home page](http://www.bioconductor.org/packages/release/bioc/html/DESeq2.html) for more details. 
+
+Here is the summary of the data variable `kostic` that we are about to use, as well as the first few entries of the `DIAGNOSIS` factor.
+```{r show-variables}
+kostic
+head(sample_data(kostic)$DIAGNOSIS, 25)
+```
+
+Unfortunately, the diagnosis variable has a third placeholder class indicating that no diagnosis was given (`"None"`). For the purposes of testing, these samples will be removed.
+
+```{r}
+kostic = subset_samples(kostic, DIAGNOSIS != "None")
+kostic
+```
+
+
+
+### DESeq conversion and call
+
+First load DESeq.
+
+```{r deseq2, message=FALSE, warning=FALSE}
+library("DESeq")
+packageVersion("DESeq")
+```
+
+### phyloseq to DESeq
+
+Define function to perform the DESeq binom test for two classes.
+
+- `physeq` - (Required). The phyloseq data object.
+- `designFactor` - (Required). The factor defining the "experimental design", the conditions/source type that you want to formally compare. The length of the factor must be equal to `nsamples(physeq)`. This is passed directly to the `conditions` argument of DESeq's `newCountDataSet` function. See documentation in DESeq for more details. Alternatively, this can be one of the sample variables in `physeq`(see `sample_variables(physeq)`), if it is discrete.
+- `fitType` - (Optional). Default is `"local"`. The `fitType` used to `estimateDispersions`. See documentation in DESeq for more details.
+- `locfunc` - (Optional). Default is `median`. A *location* function that will be used during `estimateSizeFactors`. See documentation in DESeq for more details.
+- `...` - (Optional). Additional named arguments passed to `estimateDispersions`. See documentation in DESeq for more details.
+
+```{r deseq-binom-test}
+phyloseq_to_DESeq = function(physeq, designFactor, fitType="local", locfunc=median, ...){
+	# Enforce Orientation
+	if(!taxa_are_rows(physeq)){physeq <- t(physeq)}
+	# Convert to matrix, round up to nearest integer
+	x = ceiling(as(otu_table(physeq), "matrix")) + 1L
+  # Add taxonomy data, if present.
+  if( !is.null(tax_table(physeq, FALSE)) ){
+	  taxADF = as(data.frame(as(tax_table(physeq), "matrix")), "AnnotatedDataFrame")    
+  } else {
+    taxADF = NULL
+  }
+  # Add sample data if present
+  if( !is.null(sample_data(physeq, FALSE)) ){
+    samplesADF = as(data.frame(sample_data(physeq)), "AnnotatedDataFrame")
+  } else {
+    samplesADF = NULL
+  }
+	# Initalize the count data sets.
+  if( identical(length(designFactor), 1L) ){
+    if( designFactor %in% sample_variables(physeq) ){
+      designFactor <- get_variable(physeq, designFactor)
+    } else {
+      stop("You did not provide an appropriate `designFactor` argument. Please see documentation.")
+    }
+  }
+	cds = newCountDataSet(x, conditions=designFactor, phenoData=samplesADF, featureData=taxADF)
+	# First, estimate size factors, then estimate dispersion.
+	cds = estimateSizeFactors(cds, locfunc=locfunc)
+	# Now dispersions/variance estimation, passing along additional options
+	cds = estimateDispersions(cds, fitType=fitType, ...)
+	return(cds)
+}
+```
+
+### Independent filtering
+
+Independent filtering is done automatically in DESeq2, but not in DESeq. Here we will filter OTUs for which the variance across all samples is very low, and we'll do this before ever passing the data to DESeq. 
+
+```{r var-plot}
+hist(log10(apply(otu_table(kostic), 1, var)),
+     xlab="log10(variance)",
+     main="A large fraction of OTUs have very low variance")
+kostic
+varianceThreshold = 30
+keepOTUs = apply(otu_table(kostic), 1, var) > varianceThreshold
+kostic1 = prune_taxa(keepOTUs, kostic)
+kostic1
+```
+
+Here we've used an arbitrary but not-unreasonable variance threshold of `r varianceThreshold`. It is important to keep in mind that this filtering is independent of our downstream test. The sample classifications were not used.
+
+
+### Create cds and test
+
+Call the function to create a DESeq "Count Data Set" object. In this example we have a large number of replicates per sample-class, for which the `sharingMode="gene-est-only"` option seems appropriate, despite the automated false-positives warning thrown by DESeq. In fact, the results shown below appear more conservative (fewer positive OTUs) than some of the other methods shown in the tutorials.
+
+```{r create-cds}
+cds = phyloseq_to_DESeq(kostic1, "DIAGNOSIS", sharingMode="gene-est-only")
+```
+
+Now try the negative binomial difference test, using DESeq's `nbinomTest`.
+
+```{r calc-res}
+res = nbinomTest(cds, "Healthy", "Tumor")
+dim(res)
+```
+
+### Investigate multi-test results
+
+The object `res` contains a table
+
+```{r grab-results-process-table}
+alpha = 0.1
+# The following omits the NA p-values. I'm not sure where the NA is derived from.
+sigtab = res[which(res$padj < alpha), ]
+dim(sigtab)
+# Add taxonomic labels for plotting
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(kostic1)[sigtab$id, ], "matrix"))
+sigtab = sigtab[order(sigtab$padj), ]
+```
+
+Inpsect the OTUs that were significantly different between the two tissues. The following makes a nice ggplot2 summary of the results.
+
+```{r bar-plot}
+library("ggplot2")
+theme_set(theme_bw())
+scale_fill_discrete <- function(palname = "Set1", ...) {
+    scale_fill_brewer(palette = palname, ...)
+}
+# Phylum order
+x = tapply(sigtab$log2FoldChange, sigtab$Phylum, function(x) max(x))
+x = sort(x, TRUE)
+x
+sigtab$Phylum <- factor(as.character(sigtab$Phylum), levels=names(x))
+# Genus order
+x = tapply(sigtab$log2FoldChange, sigtab$Genus, function(x) max(x))
+x = sort(x, TRUE)
+x
+sigtab$Genus <- factor(as.character(sigtab$Genus), levels=names(x))
+ggplot(sigtab, aes(x=Genus, y=log2FoldChange, color=Phylum)) + geom_point(size=6) + 
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))
+```
+
+
+
+---
+
+## Other extensions for the phyloseq package:
+
+```{r other-graphics-links, results='asis', echo=FALSE}
+htmlfiles = list.files(pattern="\\.html")
+htmlstems = gsub(".html", "", htmlfiles)
+mdlines = paste("#### [", htmlstems, "](", htmlfiles, ")", sep="")
+cat(mdlines, sep="\n\n")
+```
