@@ -100,7 +100,7 @@ date()
 ```
 
 ```
-## [1] "Mon Feb 10 16:10:13 2014"
+## [1] "Sat Feb 15 10:54:08 2014"
 ```
 
 ```r
@@ -109,7 +109,7 @@ packageVersion("phyloseq")
 ```
 
 ```
-## [1] '1.7.16'
+## [1] '1.7.17'
 ```
 
 ```r
@@ -241,9 +241,13 @@ ggplot(sigtabgen, aes(x = Genus, y = logFC, color = Phylum)) + geom_point(size =
 
 ## Other extensions for the phyloseq package:
 
+#### [DESeq](DESeq.html)
+
 #### [DESeq2](DESeq2.html)
 
 #### [edgeR](edgeR.html)
 
 #### [extensions-index](extensions-index.html)
+
+#### [index](index.html)
 

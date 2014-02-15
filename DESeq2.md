@@ -50,7 +50,7 @@ packageVersion("phyloseq")
 ```
 
 ```
-## [1] '1.7.16'
+## [1] '1.7.17'
 ```
 
 
@@ -257,9 +257,13 @@ ggplot(sigtab, aes(x = Genus, y = log2FoldChange, color = Phylum)) + geom_point(
 
 ## Other extensions for the phyloseq package:
 
+#### [DESeq](DESeq.html)
+
 #### [DESeq2](DESeq2.html)
 
 #### [edgeR](edgeR.html)
 
 #### [extensions-index](extensions-index.html)
+
+#### [index](index.html)
 
