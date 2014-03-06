@@ -100,7 +100,7 @@ date()
 ```
 
 ```
-## [1] "Sat Feb 15 10:54:08 2014"
+## [1] "Wed Mar  5 16:27:53 2014"
 ```
 
 ```r
@@ -109,7 +109,7 @@ packageVersion("phyloseq")
 ```
 
 ```
-## [1] '1.7.17'
+## [1] '1.7.21'
 ```
 
 ```r
@@ -128,7 +128,7 @@ I use here the same example dataset as in the DESeq2 vignette, the publicly avai
 [Genomic analysis identifies association of Fusobacterium with colorectal carcinoma](http://genome.cshlp.org/content/22/2/292.long).
 Kostic, A. D., Gevers, D., Pedamallu, C. S., Michaud, M., Duke, F., Earl, A. M., et al. (2012). *Genome research*, 22(2), 292-298. 
 
-This work was published ahead of print in [Genome Research](http://genome.cshlp.org/) alongside a highly-related article from a separate group of researchers (long-live reproducible observations!): [Fusobacterium nucleatum infection is prevalent in human colorectal carcinoma](http://genome.cshlp.org/content/22/2/299.long). In case you are interested. For the purposes of example, however, we will stick to the data from the former study, with data available at the [microbio.me/qiime](http://www.microbio.me/qiime/) server.
+This work was published ahead of print in [Genome Research](http://genome.cshlp.org/) alongside a highly-related article from a separate group of researchers (hooray for reproducible observations!): [Fusobacterium nucleatum infection is prevalent in human colorectal carcinoma](http://genome.cshlp.org/content/22/2/299.long). In case you are interested. For the purposes of example, however, we will stick to the data from the former study, with data available at the [microbio.me/qiime](http://www.microbio.me/qiime/) server.
 
 Study ID:  `1457`
 
@@ -156,65 +156,129 @@ kostic = microbio_me_qiime(filepath)
 ```r
 # Remove the samples for which the DIAGNOSIS was not included
 kosticB = subset_samples(kostic, DIAGNOSIS != "None")
+```
+
+
+### Independent filtering
+
+Independent filtering is done automatically in DESeq2, but not in DESeq. Here we will filter OTUs for which the variance across all samples is very low, and we'll do this before ever passing the data to DESeq. 
+
+
+```r
+kosticB
+```
+
+```
+## phyloseq-class experiment-level object
+## otu_table()   OTU Table:         [ 2505 taxa and 185 samples ]
+## sample_data() Sample Data:       [ 185 samples by 71 sample variables ]
+## tax_table()   Taxonomy Table:    [ 2505 taxa by 7 taxonomic ranks ]
+```
+
+```r
+kosticp = transformSampleCounts(kosticB, function(x) {
+    x/sum(x)
+})
+hist(log10(apply(otu_table(kosticp), 1, var)), xlab = "log10(variance)", breaks = 50, 
+    main = "A large fraction of OTUs have very low variance")
+```
+
+![plot of chunk var-plot-ind-filter](figure/var-plot-ind-filter.png) 
+
+```r
+varianceThreshold = 1e-05
+keepOTUs = names(which(apply(otu_table(kosticp), 1, var) > varianceThreshold))
+kosticB = prune_taxa(keepOTUs, kosticB)
+kosticB
+```
+
+```
+## phyloseq-class experiment-level object
+## otu_table()   OTU Table:         [ 195 taxa and 185 samples ]
+## sample_data() Sample Data:       [ 185 samples by 71 sample variables ]
+## tax_table()   Taxonomy Table:    [ 195 taxa by 7 taxonomic ranks ]
+```
+
+
+Here we've used an arbitrary but not-unreasonable variance threshold of 10<sup>-5</sup>. It is important to keep in mind that this filtering is independent of our downstream test. The sample classifications were not used.
+
+Now let's use our newly-defined function to convert the phyloseq data object `kosticB` into an edgeR "DGE" data object, called `dge`.
+
+
+```r
 dge = phyloseq_to_edgeR(kosticB, group = "DIAGNOSIS")
 # Perform binary test
 et = exactTest(dge)
 # Extract values from test results
 tt = topTags(et, n = nrow(dge$table), adjust.method = "BH", sort.by = "PValue")
 res = tt@.Data[[1]]
-alpha = 0.01
+alpha = 0.001
 sigtab = res[(res$FDR < alpha), ]
 sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(kosticB)[rownames(sigtab), 
     ], "matrix"))
+dim(sigtab)
+```
+
+```
+## [1] 62 18
+```
+
+```r
 head(sigtab)
 ```
 
 ```
-##         Kingdom         Phylum                 Class             Order
-## 156697 Bacteria   Fusobacteria  Fusobacteria (class)   Fusobacteriales
-## 211205 Bacteria     Firmicutes            Clostridia     Clostridiales
-## 114860 Bacteria     Firmicutes               Bacilli   Lactobacillales
-## 49616  Bacteria Proteobacteria   Gammaproteobacteria    Pasteurellales
-## 38061  Bacteria   Fusobacteria  Fusobacteria (class)   Fusobacteriales
-## 484430 Bacteria Proteobacteria Epsilonproteobacteria Campylobacterales
-##                    Family         Genus                 Species  logFC
-## 156697   Fusobacteriaceae  Leptotrichia Leptotrichia trevisanii  4.116
-## 211205    Lachnospiraceae          <NA>                    <NA> -3.551
-## 114860   Streptococcaceae Streptococcus                    <NA>  3.778
-## 49616     Pasteurellaceae   Haemophilus  Haemophilus influenzae  3.129
-## 38061    Fusobacteriaceae  Leptotrichia                    <NA>  3.423
-## 484430 Campylobacteraceae Campylobacter  Campylobacter gracilis  2.759
+##         Kingdom         Phylum                Class            Order
+## 156697 Bacteria   Fusobacteria Fusobacteria (class)  Fusobacteriales
+## 114860 Bacteria     Firmicutes              Bacilli  Lactobacillales
+## 211205 Bacteria     Firmicutes           Clostridia    Clostridiales
+## 2394   Bacteria  Bacteroidetes        Flavobacteria Flavobacteriales
+## 38061  Bacteria   Fusobacteria Fusobacteria (class)  Fusobacteriales
+## 49616  Bacteria Proteobacteria  Gammaproteobacteria   Pasteurellales
+##                   Family          Genus                 Species  logFC
+## 156697  Fusobacteriaceae   Leptotrichia Leptotrichia trevisanii  4.370
+## 114860  Streptococcaceae  Streptococcus                    <NA>  3.830
+## 211205   Lachnospiraceae           <NA>                    <NA> -3.599
+## 2394   Flavobacteriaceae Capnocytophaga Capnocytophaga ochracea  3.148
+## 38061   Fusobacteriaceae   Leptotrichia                    <NA>  3.554
+## 49616    Pasteurellaceae    Haemophilus  Haemophilus influenzae  3.191
 ##        logCPM    PValue       FDR  Kingdom         Phylum
-## 156697 11.776 1.491e-25 3.735e-22 Bacteria   Fusobacteria
-## 211205 10.528 3.187e-22 3.153e-19 Bacteria     Firmicutes
-## 114860 10.975 3.777e-22 3.153e-19 Bacteria     Firmicutes
-## 49616  10.586 3.569e-19 2.235e-16 Bacteria Proteobacteria
-## 38061  11.062 5.579e-19 2.795e-16 Bacteria   Fusobacteria
-## 484430  9.998 8.940e-18 3.732e-15 Bacteria Proteobacteria
-##                        Class             Order             Family
-## 156697  Fusobacteria (class)   Fusobacteriales   Fusobacteriaceae
-## 211205            Clostridia     Clostridiales    Lachnospiraceae
-## 114860               Bacilli   Lactobacillales   Streptococcaceae
-## 49616    Gammaproteobacteria    Pasteurellales    Pasteurellaceae
-## 38061   Fusobacteria (class)   Fusobacteriales   Fusobacteriaceae
-## 484430 Epsilonproteobacteria Campylobacterales Campylobacteraceae
-##                Genus                 Species
-## 156697  Leptotrichia Leptotrichia trevisanii
-## 211205          <NA>                    <NA>
-## 114860 Streptococcus                    <NA>
-## 49616    Haemophilus  Haemophilus influenzae
-## 38061   Leptotrichia                    <NA>
-## 484430 Campylobacter  Campylobacter gracilis
+## 156697  12.82 2.931e-27 5.716e-25 Bacteria   Fusobacteria
+## 114860  11.95 2.598e-22 2.533e-20 Bacteria     Firmicutes
+## 211205  11.52 1.172e-21 7.621e-20 Bacteria     Firmicutes
+## 2394    10.86 1.193e-20 5.814e-19 Bacteria  Bacteroidetes
+## 38061   12.04 4.827e-20 1.882e-18 Bacteria   Fusobacteria
+## 49616   11.55 9.061e-20 2.945e-18 Bacteria Proteobacteria
+##                       Class            Order            Family
+## 156697 Fusobacteria (class)  Fusobacteriales  Fusobacteriaceae
+## 114860              Bacilli  Lactobacillales  Streptococcaceae
+## 211205           Clostridia    Clostridiales   Lachnospiraceae
+## 2394          Flavobacteria Flavobacteriales Flavobacteriaceae
+## 38061  Fusobacteria (class)  Fusobacteriales  Fusobacteriaceae
+## 49616   Gammaproteobacteria   Pasteurellales   Pasteurellaceae
+##                 Genus                 Species
+## 156697   Leptotrichia Leptotrichia trevisanii
+## 114860  Streptococcus                    <NA>
+## 211205           <NA>                    <NA>
+## 2394   Capnocytophaga Capnocytophaga ochracea
+## 38061    Leptotrichia                    <NA>
+## 49616     Haemophilus  Haemophilus influenzae
 ```
 
-
-As expected from the original study abstract and title, a *Fusobacterium* OTU was most-significantly differentially abundant between the cancerous and healthy samples.
 
 Here is a bar plot showing the log2-fold-change, showing Genus and Phylum. Uses some ggplot2 commands.
 
 
 ```r
 library("ggplot2")
+packageVersion("ggplot2")
+```
+
+```
+## [1] '0.9.3.1'
+```
+
+```r
 theme_set(theme_bw())
 scale_fill_discrete <- function(palname = "Set1", ...) {
     scale_fill_brewer(palette = palname, ...)
@@ -233,6 +297,255 @@ ggplot(sigtabgen, aes(x = Genus, y = logFC, color = Phylum)) + geom_point(size =
 ```
 
 ![plot of chunk unnamed-chunk-4](figure/unnamed-chunk-4.png) 
+
+
+As expected from the original study abstract and title, *Fusobacterium* OTUs were most-significantly differentially abundant between the cancerous and healthy samples. If you look closely, two different genera of the Fusobacteria phylum were among the most significantly different, *Leptotrichia* (the winner) as well as *Fusobacterium*.
+
+---
+
+## Paired tests
+
+As mentioned above, the design of this experiment is 95 carcinoma/normal pairs, where each pair comes from the same patient. Although the previous tests are valid, they are conservative in that they do not use this extra information regarding the sample-pairs, and in that sense have forfeited extra power. There is support in edgeR for paired tests, and this is officially described in [one of the edgeR user guides](http://www.bioconductor.org/packages/release/bioc/vignettes/edgeR/inst/doc/edgeRUsersGuide.pdf). It is also demonstrated here in the following.
+
+
+```r
+Diagnosis = get_variable(kosticB, "DIAGNOSIS")
+Patient = get_variable(kosticB, "ANONYMIZED_NAME")
+# Notice that we have some patients without one of the pairs.
+tapply(Patient, Diagnosis, length)
+```
+
+```
+## Healthy   Tumor 
+##      95      90
+```
+
+```r
+length(levels(Patient))
+```
+
+```
+## [1] 97
+```
+
+```r
+any(tapply(Diagnosis, Patient, length) > 2)
+```
+
+```
+## [1] FALSE
+```
+
+```r
+sum(tapply(Diagnosis, Patient, length) < 2)
+```
+
+```
+## [1] 9
+```
+
+```r
+# Keep only patients with both healthy and cancer samples
+keepPatients = names(which(tapply(Diagnosis, Patient, function(x) {
+    length(unique(x))
+}) == 2))
+kosticBpair = subset_samples(kosticB, ANONYMIZED_NAME %in% keepPatients)
+Diagnosis = get_variable(kosticBpair, "DIAGNOSIS")
+Patient = get_variable(kosticBpair, "ANONYMIZED_NAME")
+# With that accounting out of the way, define the design matrix
+design = model.matrix(~Patient + Diagnosis)
+```
+
+
+Must estimate the dispersions, as always. This is different than in the function shown above.
+
+
+```r
+# Add one to protect against overflow, log(0) issues.
+x = as(otu_table(kosticBpair), "matrix") + 1L
+taxonomy = data.frame(as(tax_table(kosticBpair), "matrix"))
+# Now turn into a DGEList
+x = DGEList(counts = x, group = Diagnosis, genes = taxonomy, remove.zeros = TRUE)
+# Calculate the normalization factors and estimate dispersion
+x = calcNormFactors(x, method = "RLE")
+x = estimateGLMCommonDisp(x, design)
+x = estimateGLMTrendedDisp(x, design)
+x = estimateGLMTagwiseDisp(x, design)
+```
+
+
+As in the edgeR User's Guide, we proceed to fit a linear model and test for the treatment effect. Note that we can omit the coefficient argument to `glmLRT` because the "treatment effect" (in this case the tissue diagnosis) is the last coeffcient in the model.
+
+
+```r
+fit <- glmFit(x, design)
+lrt <- glmLRT(fit)
+topTags(lrt)
+```
+
+```
+## Coefficient:  DiagnosisTumor 
+##         Kingdom         Phylum                  Class            Order
+## 180285 Bacteria     Firmicutes             Clostridia    Clostridiales
+## 72853  Bacteria     Firmicutes             Clostridia    Clostridiales
+## 174809 Bacteria  Bacteroidetes            Bacteroidia    Bacteroidales
+## 322235 Bacteria  Bacteroidetes            Bacteroidia    Bacteroidales
+## 194648 Bacteria     Firmicutes             Clostridia    Clostridiales
+## 181056 Bacteria     Firmicutes             Clostridia    Clostridiales
+## 469709 Bacteria  Bacteroidetes            Bacteroidia    Bacteroidales
+## 186029 Bacteria Actinobacteria Actinobacteria (class) Coriobacteriales
+## 157566 Bacteria  Bacteroidetes            Bacteroidia    Bacteroidales
+## 248140 Bacteria  Bacteroidetes            Bacteroidia    Bacteroidales
+##                   Family            Genus                 Species  logFC
+## 180285   Ruminococcaceae Faecalibacterium                    <NA> -1.631
+## 72853    Ruminococcaceae Faecalibacterium                    <NA> -1.526
+## 174809    Bacteroidaceae      Bacteroides                    <NA> -1.362
+## 322235    Bacteroidaceae      Bacteroides   Bacteroides uniformis -1.178
+## 194648              <NA>             <NA>                    <NA> -1.149
+## 181056   Ruminococcaceae Faecalibacterium                    <NA> -1.401
+## 469709    Bacteroidaceae      Bacteroides       Bacteroides dorei -1.309
+## 186029 Coriobacteriaceae      Collinsella Collinsella aerofaciens -1.298
+## 157566     Rikenellaceae        Alistipes                    <NA> -1.176
+## 248140    Bacteroidaceae      Bacteroides      Bacteroides caccae -1.190
+##        logCPM    LR    PValue       FDR
+## 180285  15.71 92.98 5.278e-22 1.029e-19
+## 72853   13.22 73.89 8.255e-18 8.049e-16
+## 174809  15.03 54.24 1.772e-13 1.152e-11
+## 322235  13.30 50.89 9.786e-13 4.771e-11
+## 194648  11.86 49.92 1.602e-12 6.249e-11
+## 181056  14.09 48.04 4.182e-12 1.359e-10
+## 469709  15.92 43.90 3.450e-11 9.142e-10
+## 186029  11.75 43.74 3.750e-11 9.142e-10
+## 157566  13.71 43.06 5.311e-11 1.151e-09
+## 248140  14.16 41.75 1.035e-10 2.018e-09
+```
+
+This test detects OTUs that are differentially abundant in the tumor colon mucosa relative to the healthy colon mucosa (control), adjusting for baseline differences between the patients. This test can be viewed as a generalization of a paired t-test.
+
+Re-make the plot.
+
+
+```r
+respair = topTags(lrt, n = nrow(x), adjust.method = "BH", sort.by = "PValue")
+respair = respair@.Data[[1]]
+alpha = 0.001
+sigtab = respair[(respair$FDR < alpha), ]
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(kosticB)[rownames(sigtab), 
+    ], "matrix"))
+dim(sigtab)
+```
+
+```
+## [1] 37 19
+```
+
+```r
+head(sigtab)
+```
+
+```
+##         Kingdom        Phylum       Class         Order          Family
+## 180285 Bacteria    Firmicutes  Clostridia Clostridiales Ruminococcaceae
+## 72853  Bacteria    Firmicutes  Clostridia Clostridiales Ruminococcaceae
+## 174809 Bacteria Bacteroidetes Bacteroidia Bacteroidales  Bacteroidaceae
+## 322235 Bacteria Bacteroidetes Bacteroidia Bacteroidales  Bacteroidaceae
+## 194648 Bacteria    Firmicutes  Clostridia Clostridiales            <NA>
+## 181056 Bacteria    Firmicutes  Clostridia Clostridiales Ruminococcaceae
+##                   Genus               Species  logFC logCPM    LR
+## 180285 Faecalibacterium                  <NA> -1.631  15.71 92.98
+## 72853  Faecalibacterium                  <NA> -1.526  13.22 73.89
+## 174809      Bacteroides                  <NA> -1.362  15.03 54.24
+## 322235      Bacteroides Bacteroides uniformis -1.178  13.30 50.89
+## 194648             <NA>                  <NA> -1.149  11.86 49.92
+## 181056 Faecalibacterium                  <NA> -1.401  14.09 48.04
+##           PValue       FDR  Kingdom        Phylum       Class
+## 180285 5.278e-22 1.029e-19 Bacteria    Firmicutes  Clostridia
+## 72853  8.255e-18 8.049e-16 Bacteria    Firmicutes  Clostridia
+## 174809 1.772e-13 1.152e-11 Bacteria Bacteroidetes Bacteroidia
+## 322235 9.786e-13 4.771e-11 Bacteria Bacteroidetes Bacteroidia
+## 194648 1.602e-12 6.249e-11 Bacteria    Firmicutes  Clostridia
+## 181056 4.182e-12 1.359e-10 Bacteria    Firmicutes  Clostridia
+##                Order          Family            Genus
+## 180285 Clostridiales Ruminococcaceae Faecalibacterium
+## 72853  Clostridiales Ruminococcaceae Faecalibacterium
+## 174809 Bacteroidales  Bacteroidaceae      Bacteroides
+## 322235 Bacteroidales  Bacteroidaceae      Bacteroides
+## 194648 Clostridiales            <NA>             <NA>
+## 181056 Clostridiales Ruminococcaceae Faecalibacterium
+##                      Species
+## 180285                  <NA>
+## 72853                   <NA>
+## 174809                  <NA>
+## 322235 Bacteroides uniformis
+## 194648                  <NA>
+## 181056                  <NA>
+```
+
+```r
+sigtabgen = subset(sigtab, !is.na(Genus))
+# Phylum order
+x = tapply(sigtabgen$logFC, sigtabgen$Phylum, function(x) max(x))
+x = sort(x, TRUE)
+sigtabgen$Phylum = factor(as.character(sigtabgen$Phylum), levels = names(x))
+# Genus order
+x = tapply(sigtabgen$logFC, sigtabgen$Genus, function(x) max(x))
+x = sort(x, TRUE)
+sigtabgen$Genus = factor(as.character(sigtabgen$Genus), levels = names(x))
+ggplot(sigtabgen, aes(x = Genus, y = logFC, color = Phylum)) + geom_point(size = 6) + 
+    theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.5)) + 
+    ggtitle("Log Fold Change of Significant OTUs in a Paired Test")
+```
+
+![plot of chunk paired-ggplot](figure/paired-ggplot.png) 
+
+
+### Other covariates available
+
+As a side note, there are many other interesting patient-sample covariates available in the `sample_data`, which you can access with `sample_data()` and `get_variable()`.
+
+
+```r
+sample_variables(kostic)
+```
+
+```
+##  [1] "X.SampleID"                    "BarcodeSequence"              
+##  [3] "LinkerPrimerSequence"          "NECROSIS_PERCENT"             
+##  [5] "TARGET_SUBFRAGMENT"            "ASSIGNED_FROM_GEO"            
+##  [7] "EXPERIMENT_CENTER"             "TITLE"                        
+##  [9] "RUN_PREFIX"                    "AGE"                          
+## [11] "NORMAL_EQUIVALENT_PERCENT"     "FIBROBLAST_AND_VESSEL_PERCENT"
+## [13] "DEPTH"                         "TREATMENT"                    
+## [15] "AGE_AT_DIAGNOSIS"              "COMMON_NAME"                  
+## [17] "HOST_COMMON_NAME"              "BODY_SITE"                    
+## [19] "ELEVATION"                     "REPORTS_RECEIVED"             
+## [21] "CEA"                           "PCR_PRIMERS"                  
+## [23] "COLLECTION_DATE"               "ALTITUDE"                     
+## [25] "ENV_BIOME"                     "SEX"                          
+## [27] "PLATFORM"                      "RACE"                         
+## [29] "BSP_DIAGNOSIS"                 "STUDY_CENTER"                 
+## [31] "COUNTRY"                       "CHEMOTHERAPY"                 
+## [33] "YEAR_OF_DEATH"                 "ETHNICITY"                    
+## [35] "ANONYMIZED_NAME"               "TAXON_ID"                     
+## [37] "SAMPLE_CENTER"                 "SAMP_SIZE"                    
+## [39] "YEAR_OF_BIRTH"                 "ORIGINAL_DIAGNOSIS"           
+## [41] "AGE_UNIT"                      "STUDY_ID"                     
+## [43] "EXPERIMENT_DESIGN_DESCRIPTION" "Description_duplicate"        
+## [45] "DIAGNOSIS"                     "BODY_HABITAT"                 
+## [47] "SEQUENCING_METH"               "RUN_DATE"                     
+## [49] "HISTOLOGIC_GRADE"              "LONGITUDE"                    
+## [51] "ENV_MATTER"                    "TARGET_GENE"                  
+## [53] "ENV_FEATURE"                   "KEY_SEQ"                      
+## [55] "BODY_PRODUCT"                  "TUMOR_PERCENT"                
+## [57] "LIBRARY_CONSTRUCTION_PROTOCOL" "REGION"                       
+## [59] "RUN_CENTER"                    "TUMOR_TYPE"                   
+## [61] "BSP_NOTES"                     "RADIATION_THERAPY"            
+## [63] "INFLAMMATION_PERCENT"          "HOST_SUBJECT_ID"              
+## [65] "PC3"                           "LATITUDE"                     
+## [67] "OSH_DIAGNOSIS"                 "STAGE"                        
+## [69] "PRIMARY_DISEASE"               "HOST_TAXID"                   
+## [71] "Description"
+```
 
 
 
