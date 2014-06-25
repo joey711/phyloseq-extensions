@@ -45,21 +45,18 @@ Start by loading phyloseq.
 
 
 ```r
-library("phyloseq")
-packageVersion("phyloseq")
+library("phyloseq"); packageVersion("phyloseq")
 ```
 
 ```
-## [1] '1.7.17'
+## [1] '1.7.12'
 ```
-
 
 Defined file path, and import the published OTU count data into R.
 
 
 ```r
-filepath = system.file("extdata", "study_1457_split_library_seqs_and_mapping.zip", 
-    package = "phyloseq")
+filepath = system.file("extdata", "study_1457_split_library_seqs_and_mapping.zip", package="phyloseq")
 kostic = microbio_me_qiime(filepath)
 ```
 
@@ -72,7 +69,6 @@ kostic = microbio_me_qiime(filepath)
 ##  Returning...
 ```
 
-
 Here I had to use a relative file path so that this example works on all systems that have phyloseq installed. In practice, your file path will look like this (if you've downloaded the data ahead of time):
 
 
@@ -81,14 +77,12 @@ filepath = "~/Downloads/study_1457_split_library_seqs_and_mapping.zip"
 kostic = microbio_me_qiime(filepath)
 ```
 
-
 Or like this (if you're accessing data directly from the microbio.me/qiime server directly):
 
 
 ```r
 kostic = microbio_me_qiime(1457)
 ```
-
 
 
 ## Convert to DESeq2's DESeqDataSet class
@@ -120,7 +114,6 @@ head(sample_data(kostic)$DIAGNOSIS, 25)
 ## Levels: Healthy None Tumor
 ```
 
-
 Unfortunately, the diagnosis variable has a third placeholder class indicating that no diagnosis was given (`"None"`). For the purposes of testing, these samples will be removed.
 
 
@@ -138,7 +131,6 @@ kostic
 
 
 
-
 ### DESeq2 conversion and call
 
 First load DESeq2.
@@ -153,13 +145,12 @@ packageVersion("DESeq2")
 ## [1] '1.2.10'
 ```
 
-
 The following two lines actually do all the complicated DESeq2 work. The function `phyloseq_to_deseq2` converts your phyloseq-format microbiome data into a `DESeqDataSet` with dispersions estimated, using the experimental design formula, also shown (the `~DIAGNOSIS` term). The `DESeq` function does the rest of the testing, in this case with default testing framework, but you can actually use alternatives. 
 
 
 ```r
-diagdds = phyloseq_to_deseq2(kostic, ~DIAGNOSIS)
-diagdds = DESeq(diagdds, test = "Wald", fitType = "parametric")
+diagdds = phyloseq_to_deseq2(kostic, ~ DIAGNOSIS)
+diagdds = DESeq(diagdds, test="Wald", fitType="parametric")
 ```
 
 ```
@@ -170,7 +161,6 @@ diagdds = DESeq(diagdds, test = "Wald", fitType = "parametric")
 ## final dispersion estimates
 ## fitting model and testing
 ```
-
 Note: The default multiple-inference correction is Benjamini-Hochberg, and occurs within the `DESeq` function.
 
 ### Investigate test results table
@@ -179,43 +169,35 @@ The following `results` function call creates a table of the results of the test
 
 
 ```r
-res = results(diagdds)
+res = results(diagdds, cooksCutoff = FALSE)
 alpha = 0.01
-# The following omits the NA p-values. I'm not sure where the NA is derived
-# from.
 sigtab = res[which(res$padj < alpha), ]
-# This line then reinstates the previous NA padj values if their
-# log2FoldChange was greater than for p-value threshold.  Note that this
-# next line is a hack to deal with the unexplained/unexpected NA p-values,
-# and I will udpate this once I can track down the reasoning.
-sigtab = res[abs(res$log2FoldChange) > min(abs(sigtab$log2FoldChange)), ]
-sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(kostic)[rownames(sigtab), 
-    ], "matrix"))
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(kostic)[rownames(sigtab), ], "matrix"))
 head(sigtab)
 ```
 
 ```
 ##        baseMean log2FoldChange  lfcSE   stat    pvalue      padj  Kingdom
-## 304309    1.686        -0.6409 0.1823 -3.516 4.380e-04 0.0034777 Bacteria
-## 16076    13.805        -0.8583 0.2094 -4.099        NA        NA Bacteria
-## 117676    9.693        -0.5719 0.2059 -2.778        NA        NA Bacteria
-## 561483    1.866        -0.6382 0.1809 -3.529        NA        NA Bacteria
-## 177005    8.598        -0.7467 0.1905 -3.920 8.865e-05 0.0009678 Bacteria
-## 469778    9.049        -0.6633 0.2209 -3.003        NA        NA Bacteria
+## 304309    1.686        -0.6409 0.1823 -3.516 4.380e-04 0.0018912 Bacteria
+## 16076    13.805        -0.8583 0.2094 -4.099 4.144e-05 0.0002678 Bacteria
+## 561483    1.866        -0.6382 0.1809 -3.529 4.178e-04 0.0018193 Bacteria
+## 177005    8.598        -0.7467 0.1905 -3.920 8.865e-05 0.0004876 Bacteria
+## 469778    9.049        -0.6633 0.2209 -3.003 2.673e-03 0.0080976 Bacteria
+## 308873    4.165        -0.5360 0.1794 -2.988 2.809e-03 0.0084662 Bacteria
 ##                Phylum                  Class             Order
 ## 304309     Firmicutes             Clostridia     Clostridiales
 ## 16076      Firmicutes             Clostridia     Clostridiales
-## 117676  Bacteroidetes            Bacteroidia     Bacteroidales
 ## 561483 Actinobacteria Actinobacteria (class) Bifidobacteriales
 ## 177005     Firmicutes             Clostridia     Clostridiales
 ## 469778  Bacteroidetes            Bacteroidia     Bacteroidales
-##                    Family           Genus                 Species
-## 304309    Lachnospiraceae         Blautia        Blautia producta
-## 16076     Ruminococcaceae    Ruminococcus     Ruminococcus bromii
-## 117676 Porphyromonadaceae            <NA>                    <NA>
-## 561483 Bifidobacteriaceae Bifidobacterium  Bifidobacterium longum
-## 177005    Lachnospiraceae         Blautia                    <NA>
-## 469778     Bacteroidaceae     Bacteroides Bacteroides coprophilus
+## 308873     Firmicutes             Clostridia     Clostridiales
+##                    Family           Genus                  Species
+## 304309    Lachnospiraceae         Blautia         Blautia producta
+## 16076     Ruminococcaceae    Ruminococcus      Ruminococcus bromii
+## 561483 Bifidobacteriaceae Bifidobacterium   Bifidobacterium longum
+## 177005    Lachnospiraceae         Blautia                     <NA>
+## 469778     Bacteroidaceae     Bacteroides  Bacteroides coprophilus
+## 308873    Ruminococcaceae     Clostridium Clostridium orbiscindens
 ```
 
 ```r
@@ -223,9 +205,8 @@ dim(sigtab)
 ```
 
 ```
-## [1] 253  13
+## [1] 218  13
 ```
-
 
 Let's look at the OTUs that were significantly different between the two tissues. The following makes a nice ggplot2 summary of the results.
 
@@ -239,17 +220,16 @@ scale_fill_discrete <- function(palname = "Set1", ...) {
 # Phylum order
 x = tapply(sigtab$log2FoldChange, sigtab$Phylum, function(x) max(x))
 x = sort(x, TRUE)
-sigtab$Phylum = factor(as.character(sigtab$Phylum), levels = names(x))
+sigtab$Phylum = factor(as.character(sigtab$Phylum), levels=names(x))
 # Genus order
 x = tapply(sigtab$log2FoldChange, sigtab$Genus, function(x) max(x))
 x = sort(x, TRUE)
-sigtab$Genus = factor(as.character(sigtab$Genus), levels = names(x))
-ggplot(sigtab, aes(x = Genus, y = log2FoldChange, color = Phylum)) + geom_point(size = 6) + 
-    theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.5))
+sigtab$Genus = factor(as.character(sigtab$Genus), levels=names(x))
+ggplot(sigtab, aes(x=Genus, y=log2FoldChange, color=Phylum)) + geom_point(size=6) + 
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))
 ```
 
 ![plot of chunk bar-plot](figure/bar-plot.png) 
-
 
 
 
@@ -257,13 +237,12 @@ ggplot(sigtab, aes(x = Genus, y = log2FoldChange, color = Phylum)) + geom_point(
 
 ## Other extensions for the phyloseq package:
 
-#### [DESeq](DESeq.html)
-
 #### [DESeq2](DESeq2.html)
+
+#### [DESeq](DESeq.html)
 
 #### [edgeR](edgeR.html)
 
 #### [extensions-index](extensions-index.html)
 
 #### [index](index.html)
-
