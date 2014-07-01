@@ -109,15 +109,9 @@ Note: The default multiple-inference correction is Benjamini-Hochberg, and occur
 The following `results` function call creates a table of the results of the tests. Very fast. The hard work was already stored with the rest of the DESeq2-related data in our latest version of the `diagdds` object (see above). I then order by the adjusted p-value, removing the entries with an `NA` value. The rest of this example is just formatting the results table with taxonomic information for nice(ish) display in the HTML output.
 
 ```{r grab-results-process-table}
-res = results(diagdds)
+res = results(diagdds, cooksCutoff = FALSE)
 alpha = 0.01
-# The following omits the NA p-values. I'm not sure where the NA is derived from.
 sigtab = res[which(res$padj < alpha), ]
-# This line then reinstates the previous NA padj values if their
-# log2FoldChange was greater than for p-value threshold.
-# Note that this next line is a hack to deal with the unexplained/unexpected NA p-values,
-# and I will udpate this once I can track down the reasoning.
-sigtab = res[abs(res$log2FoldChange) > min(abs(sigtab$log2FoldChange)), ]
 sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(kostic)[rownames(sigtab), ], "matrix"))
 head(sigtab)
 dim(sigtab)
