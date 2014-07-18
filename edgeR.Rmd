@@ -1,6 +1,4 @@
-`r opts_chunk$set(cache=FALSE, fig.width=12)`
-<link href="http://joey711.github.com/phyloseq/markdown.css" rel="stylesheet"></link>
-
+`r knitr::opts_chunk$set(cache=FALSE, fig.width=12)`
 
 # edgeR with phyloseq
 
@@ -76,12 +74,14 @@ phyloseq_to_edgeR = function(physeq, group, method="RLE", ...){
 If you find this extension or tutorial useful in your work, please cite the following:
 
 ### Differential Abundance for Microbiome Data
-McMurdie and Holmes (2014) Waste Not, Want Not: Why Rarefying Microbiome Data is Inadmissible.
-PLoS Computational Biology *in press*
+McMurdie and Holmes (2014)
+Waste Not, Want Not: Why Rarefying Microbiome Data is Inadmissible.
+[PLoS Computational Biology 10(4):e1003531](http://dx.plos.org/10.1371/journal.pcbi.1003531)
 
 ### phyloseq
-McMurdie and Holmes (2013) phyloseq: An R Package for Reproducible Interactive Analysis and Graphics of Microbiome Census Data.
-[PLoS ONE. 8(4):e61217](http://dx.plos.org/10.1371/journal.pone.0061217)
+McMurdie and Holmes (2013)
+phyloseq: An R Package for Reproducible Interactive Analysis and Graphics of Microbiome Census Data.
+[PLoS ONE 8(4):e61217](http://dx.plos.org/10.1371/journal.pone.0061217)
 
 ### edgeR
 Robinson MD, McCarthy DJ, Smyth GK (2009) edgeR: a Bioconductor package for differential expression analysis of digital gene expression data.
@@ -124,7 +124,7 @@ Independent filtering is done automatically in DESeq2, but not in DESeq. Here we
 
 ```{r var-plot-ind-filter}
 kosticB
-kosticp = transformSampleCounts(kosticB, function(x){x/sum(x)})
+kosticp = transform_sample_counts(kosticB, function(x){x/sum(x)})
 hist(log10(apply(otu_table(kosticp), 1, var)),
      xlab="log10(variance)", breaks=50,
      main="A large fraction of OTUs have very low variance")
