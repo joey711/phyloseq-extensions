@@ -19,8 +19,8 @@ McMurdie and Holmes (2013) phyloseq: An R Package for Reproducible Interactive A
 [PLoS ONE. 8(4):e61217](http://dx.plos.org/10.1371/journal.pone.0061217)
 
 ### DESeq2
-Anders S, Huber W (2010) Differential expression analysis for sequence count data.
-[Genome Biology 11: R106](http://www.biomedcentral.com/content/pdf/gb-2010-11-10-r106.pdf)
+Love MI, Huber W, Anders S (2014) Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2.
+[Genome Biology 15(12): 550](http://genomebiology.com/2014/15/12/550)
 
 
 
