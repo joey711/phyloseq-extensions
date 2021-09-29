@@ -70,7 +70,9 @@ kostic = microbio_me_qiime(1457)
 
 ## Convert to DESeq2's DESeqDataSet class
 
-In this example I'm using the major sample covariate, `DIAGNOSIS`, as the study design factor. The focus of this study was to compare the microbiomes of pairs of healthy and cancerous tissues, so this makes sense. Your study could have a more complex or nested design, and you should think carefully about the study design formula, because this is critical to the test results and their meaning. You might even need to define a new factor if none of the variables in your current table appropriately represent your study's design. See [the DESeq2 home page](http://www.bioconductor.org/packages/release/bioc/html/DESeq2.html) for more details. 
+In this example I'm using the major sample covariate, `DIAGNOSIS`, as the study design factor. The focus of this study was to compare the microbiomes of pairs of healthy and cancerous tissues, so this makes sense. Your study could have a more complex or nested design, and you should think carefully about the study design formula, because this is critical to the test results and their meaning. You might even need to define a new factor if none of the variables in your current table appropriately represent your study's design. If you are unsure of the study design, please consult with a local statistician or someone at your institute familiar with representing linear models in R. Please do not post study design questions to the DESeq2 developers on the Bioconductor support site (which is intended for software related questions, not general statistical questions).
+
+See [the DESeq2 home page](http://www.bioconductor.org/packages/release/bioc/html/DESeq2.html) for more details. 
 
 Here is the summary of the data variable `kostic` that we are about to use, as well as the first few entries of the `DIAGNOSIS` factor.
 ```{r show-variables}
